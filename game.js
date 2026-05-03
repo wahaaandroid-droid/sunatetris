@@ -132,11 +132,99 @@ let dropRemainder = 0;
 let lastTime = performance.now();
 let frame = 0;
 let touchState = null;
+let audioCtx = null;
+let audioUnlocked = false;
 
 bestEl.textContent = String(best);
 
 function randomInt(max) {
   return Math.floor(Math.random() * max);
+}
+
+function getAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!audioCtx) audioCtx = new AudioContextClass();
+  return audioCtx;
+}
+
+function unlockAudio() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  audioUnlocked = true;
+  if (ctx.state === "suspended") ctx.resume();
+}
+
+function makeGain(ctx, volume, start, duration) {
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0001), start + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  gain.connect(ctx.destination);
+  return gain;
+}
+
+function playTone(frequency, duration, volume, type = "square", when = 0, endFrequency = frequency) {
+  if (!audioUnlocked) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const start = ctx.currentTime + when;
+  const osc = ctx.createOscillator();
+  const gain = makeGain(ctx, volume, start, duration);
+  osc.type = type;
+  osc.frequency.setValueAtTime(frequency, start);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(endFrequency, 1), start + duration);
+  osc.connect(gain);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+function playNoise(duration, volume, when = 0, filterFrequency = 420) {
+  if (!audioUnlocked) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const start = ctx.currentTime + when;
+  const length = Math.max(1, Math.floor(ctx.sampleRate * duration));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i += 1) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+  }
+
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = makeGain(ctx, volume, start, duration);
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(filterFrequency, start);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  source.start(start);
+  source.stop(start + duration + 0.02);
+}
+
+function playLockSound() {
+  playTone(132, 0.09, 0.075, "triangle", 0, 84);
+  playNoise(0.06, 0.055, 0, 360);
+}
+
+function playClearSound(groups) {
+  const notes = [392, 523, 659, 784];
+  const count = Math.min(notes.length, 2 + groups);
+  for (let i = 0; i < count; i += 1) {
+    playTone(notes[i], 0.11, 0.07, "square", i * 0.055, notes[i] * 1.12);
+  }
+  playNoise(0.14, 0.035, 0.02, 1800);
+}
+
+function playRotateSound() {
+  playTone(520, 0.035, 0.035, "square", 0, 620);
+}
+
+function playHardDropSound() {
+  playTone(260, 0.08, 0.055, "sawtooth", 0, 120);
 }
 
 function refillBag() {
@@ -238,6 +326,7 @@ function lockPiece() {
   }
 
   score += 12;
+  playLockSound();
   scanClears();
   spawnPiece();
 }
@@ -261,6 +350,7 @@ function tryRotate() {
     if (!collides(active, active.x + kick, active.y, nextRotation)) {
       active.x += kick;
       active.rotation = nextRotation;
+      playRotateSound();
       return;
     }
   }
@@ -274,6 +364,7 @@ function hardDrop() {
     distance += 1;
   }
   score += Math.floor(distance / 2);
+  playHardDropSound();
   lockPiece();
 }
 
@@ -381,6 +472,7 @@ function scanClears() {
   lines += clearedGroups;
   level = 1 + Math.floor(lines / 5);
   score += Math.round(clearedCells * clearedGroups * 0.75 * level);
+  playClearSound(clearedGroups);
 }
 
 function traceSameColorComponent(start, color) {
@@ -648,6 +740,7 @@ document.addEventListener("keydown", (event) => {
   const key = event.key;
   if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "p", "P", "r", "R", "x", "X"].includes(key)) {
     event.preventDefault();
+    unlockAudio();
   }
 
   if (key === "ArrowLeft" || key === "a" || key === "A") tryMove(-MOVE_STEP, 0);
@@ -670,6 +763,7 @@ function bindHold(id, action, repeatMs = 86) {
 
   button.addEventListener("pointerdown", (event) => {
     event.preventDefault();
+    unlockAudio();
     button.setPointerCapture(event.pointerId);
     action();
     stop();
@@ -685,14 +779,27 @@ function bindHold(id, action, repeatMs = 86) {
 bindHold("leftBtn", () => tryMove(-MOVE_STEP, 0));
 bindHold("rightBtn", () => tryMove(MOVE_STEP, 0));
 bindHold("downBtn", softDrop, 58);
-document.getElementById("rotateBtn").addEventListener("click", tryRotate);
-document.getElementById("dropBtn").addEventListener("click", hardDrop);
-pauseBtn.addEventListener("click", togglePause);
-restartBtn.addEventListener("click", resetGame);
+document.getElementById("rotateBtn").addEventListener("click", () => {
+  unlockAudio();
+  tryRotate();
+});
+document.getElementById("dropBtn").addEventListener("click", () => {
+  unlockAudio();
+  hardDrop();
+});
+pauseBtn.addEventListener("click", () => {
+  unlockAudio();
+  togglePause();
+});
+restartBtn.addEventListener("click", () => {
+  unlockAudio();
+  resetGame();
+});
 
 gameCanvas.addEventListener("pointerdown", (event) => {
   if (event.pointerType === "mouse") return;
   event.preventDefault();
+  unlockAudio();
   gameCanvas.setPointerCapture(event.pointerId);
   touchState = {
     id: event.pointerId,
