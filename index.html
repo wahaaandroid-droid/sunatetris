@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sandtrix</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="machine" aria-label="Sandtrix">
+      <section class="play-shell" aria-label="Playfield">
+        <div class="rail rail-left" aria-hidden="true"></div>
+        <canvas id="game" width="480" height="720" aria-label="Sandtrix playfield"></canvas>
+        <div class="rail rail-right" aria-hidden="true"></div>
+      </section>
+
+      <aside class="panel" aria-label="Status panel">
+        <div class="pipework" aria-hidden="true">
+          <div class="pipe pipe-vertical"></div>
+          <div class="pipe pipe-curve"></div>
+          <div class="pipe pipe-horizontal hot"></div>
+          <div class="vent">
+            <span></span>
+          </div>
+        </div>
+
+        <section class="display preview">
+          <div class="display-label">NEXT</div>
+          <canvas id="next" width="180" height="120" aria-label="Next piece"></canvas>
+        </section>
+
+        <section class="display stats">
+          <div>
+            <span>TIME</span>
+            <strong id="time">00:00</strong>
+          </div>
+          <div>
+            <span>SCORE</span>
+            <strong id="score">0</strong>
+          </div>
+          <div>
+            <span>CLEARS</span>
+            <strong id="lines">0</strong>
+          </div>
+          <div>
+            <span>LEVEL</span>
+            <strong id="level">1</strong>
+          </div>
+        </section>
+
+        <section class="display meter-display" aria-label="Pile height">
+          <div class="meter">
+            <span id="dangerFill"></span>
+          </div>
+        </section>
+
+        <section class="display best">
+          <span>BEST</span>
+          <strong id="best">0</strong>
+        </section>
+
+        <div class="actions">
+          <button id="pauseBtn" type="button" title="Pause" aria-label="Pause">||</button>
+          <button id="restartBtn" type="button" title="Restart" aria-label="Restart">R</button>
+        </div>
+      </aside>
+    </main>
+
+    <nav class="touch-controls" aria-label="Touch controls">
+      <button id="leftBtn" type="button" title="Left" aria-label="Left">&larr;</button>
+      <button id="rotateBtn" type="button" title="Rotate" aria-label="Rotate">&#8635;</button>
+      <button id="rightBtn" type="button" title="Right" aria-label="Right">&rarr;</button>
+      <button id="downBtn" type="button" title="Soft drop" aria-label="Soft drop">&darr;</button>
+      <button id="dropBtn" type="button" title="Hard drop" aria-label="Hard drop">&#8681;</button>
+    </nav>
+
+    <script src="game.js"></script>
+  </body>
+</html>
