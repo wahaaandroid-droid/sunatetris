@@ -725,7 +725,6 @@ function render() {
   gameCtx.imageSmoothingEnabled = false;
   gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
   gameCtx.drawImage(grainCanvas, 0, 0, gameCanvas.width, gameCanvas.height);
-  drawScanLines();
   if (active && !gameOver) drawActivePiece();
   drawFlashes();
 
@@ -749,16 +748,6 @@ function drawActivePiece() {
       }
     }
   }
-}
-
-function drawScanLines() {
-  gameCtx.save();
-  gameCtx.globalAlpha = 0.16;
-  gameCtx.fillStyle = "#000";
-  for (let y = 0; y < gameCanvas.height; y += SCALE * 4) {
-    gameCtx.fillRect(0, y, gameCanvas.width, SCALE);
-  }
-  gameCtx.restore();
 }
 
 function drawFlashes() {
