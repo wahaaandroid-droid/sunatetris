@@ -10,7 +10,7 @@ Open `index.html` in a browser. No build step or dependencies are required.
 
 ## Controls
 
-The game starts after the first tap, click, or key press.
+The game starts after the first tap, click, key press, or controller input.
 
 - Left arrow: move left
 - Right arrow: move right
@@ -19,6 +19,15 @@ The game starts after the first tap, click, or key press.
 - X: rotate right
 - Up arrow: hard drop
 - P: pause
+
+## Xbox controller on desktop
+
+- D-pad or left stick: move
+- D-pad down or left stick down: soft drop
+- X or LB: rotate left
+- A, B, or RB: rotate right
+- Y, D-pad up, or left stick up: hard drop
+- Menu: pause
 
 ## Mobile
 

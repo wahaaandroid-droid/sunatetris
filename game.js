@@ -23,6 +23,9 @@ const BLOCK = 16;
 const MOVE_STEP = 8;
 const HARD_DROP_COOLDOWN_MS = 220;
 const TAP_MAX_MS = 540;
+const GAMEPAD_AXIS_THRESHOLD = 0.55;
+const GAMEPAD_REPEAT_DELAY_MS = 170;
+const GAMEPAD_REPEAT_MS = 72;
 const SAND_STEPS = 1;
 const SAND_MOVE_RATE = 5;
 const FRESH_FLOAT_BASE = 8;
@@ -139,6 +142,12 @@ let lastTime = performance.now();
 let frame = 0;
 let touchState = null;
 let nextHardDropAt = 0;
+let gamepadPrevious = {};
+let gamepadRepeatAt = {
+  left: 0,
+  right: 0,
+  down: 0
+};
 let audioCtx = null;
 let audioUnlocked = false;
 
@@ -427,6 +436,89 @@ function hardDrop() {
 
 function softDrop() {
   if (tryMove(0, 3)) score += 1;
+}
+
+function gamepadButton(gamepad, index) {
+  return gamepad.buttons[index]?.pressed === true;
+}
+
+function gamepadAxis(gamepad, index) {
+  return gamepad.axes[index] || 0;
+}
+
+function getPrimaryGamepad() {
+  if (!navigator.getGamepads) return null;
+  return Array.from(navigator.getGamepads()).find((gamepad) => gamepad?.connected) || null;
+}
+
+function readGamepadActions(gamepad) {
+  const axisX = gamepadAxis(gamepad, 0);
+  const axisY = gamepadAxis(gamepad, 1);
+
+  return {
+    left: gamepadButton(gamepad, 14) || axisX < -GAMEPAD_AXIS_THRESHOLD,
+    right: gamepadButton(gamepad, 15) || axisX > GAMEPAD_AXIS_THRESHOLD,
+    down: gamepadButton(gamepad, 13) || axisY > GAMEPAD_AXIS_THRESHOLD,
+    hardDrop: gamepadButton(gamepad, 12) || gamepadButton(gamepad, 3) || axisY < -GAMEPAD_AXIS_THRESHOLD,
+    rotateLeft: gamepadButton(gamepad, 2) || gamepadButton(gamepad, 4),
+    rotateRight: gamepadButton(gamepad, 0) || gamepadButton(gamepad, 1) || gamepadButton(gamepad, 5),
+    pause: gamepadButton(gamepad, 9)
+  };
+}
+
+function hasGamepadInput(actions) {
+  return Object.values(actions).some(Boolean);
+}
+
+function wasGamepadPressed(actions, name) {
+  return actions[name] && !gamepadPrevious[name];
+}
+
+function handleGamepadRepeat(actions, name, now, action) {
+  if (!actions[name]) {
+    gamepadRepeatAt[name] = 0;
+    return;
+  }
+
+  const firstPress = !gamepadPrevious[name];
+  if (!firstPress && now < gamepadRepeatAt[name]) return;
+
+  action();
+  gamepadRepeatAt[name] = now + (firstPress ? GAMEPAD_REPEAT_DELAY_MS : GAMEPAD_REPEAT_MS);
+}
+
+function pollGamepad(now) {
+  const gamepad = getPrimaryGamepad();
+  if (!gamepad) {
+    gamepadPrevious = {};
+    gamepadRepeatAt.left = 0;
+    gamepadRepeatAt.right = 0;
+    gamepadRepeatAt.down = 0;
+    return;
+  }
+
+  const actions = readGamepadActions(gamepad);
+  if (!gameStarted) {
+    if (hasGamepadInput(actions)) startGame();
+    gamepadPrevious = actions;
+    return;
+  }
+
+  if (actions.left && actions.right) {
+    actions.left = false;
+    actions.right = false;
+  }
+
+  handleGamepadRepeat(actions, "left", now, () => tryMove(-MOVE_STEP, 0));
+  handleGamepadRepeat(actions, "right", now, () => tryMove(MOVE_STEP, 0));
+  handleGamepadRepeat(actions, "down", now, softDrop);
+
+  if (wasGamepadPressed(actions, "rotateLeft")) tryRotate(-1);
+  if (wasGamepadPressed(actions, "rotateRight")) tryRotate(1);
+  if (wasGamepadPressed(actions, "hardDrop")) hardDrop();
+  if (wasGamepadPressed(actions, "pause")) togglePause();
+
+  gamepadPrevious = actions;
 }
 
 function swapCells(a, b) {
@@ -800,6 +892,7 @@ function update(dt) {
 function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
+  pollGamepad(now);
   update(dt);
   render();
   requestAnimationFrame(loop);
