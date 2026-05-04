@@ -20,6 +20,7 @@ const USE_TALL_TOUCH_FIELD = window.matchMedia("(max-width: 860px), (pointer: co
 const ROWS = USE_TALL_TOUCH_FIELD ? 288 : 240;
 const SCALE = 3;
 const BLOCK = 16;
+const SPAWN_VISIBLE_RATIO = 0.5;
 const MOVE_STEP = 8;
 const HARD_DROP_COOLDOWN_MS = 220;
 const TAP_MAX_MS = 540;
@@ -292,8 +293,11 @@ function takeFromBag() {
 }
 
 function spawnYForPiece(name, rotation = 0) {
-  const minY = Math.min(...SHAPES[name][rotation].map(([, y]) => y));
-  return -minY * BLOCK;
+  const ys = SHAPES[name][rotation].map(([, y]) => y);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const height = (maxY - minY + 1) * BLOCK;
+  return -minY * BLOCK - Math.floor(height * (1 - SPAWN_VISIBLE_RATIO));
 }
 
 function makePiece(name) {
