@@ -291,13 +291,18 @@ function takeFromBag() {
   return bag.pop();
 }
 
+function spawnYForPiece(name, rotation = 0) {
+  const minY = Math.min(...SHAPES[name][rotation].map(([, y]) => y));
+  return -minY * BLOCK;
+}
+
 function makePiece(name) {
   return {
     name,
     color: COLOR_BY_SHAPE[name],
     rotation: 0,
     x: Math.floor((COLS - BLOCK * 4) / 2),
-    y: -BLOCK * 3,
+    y: spawnYForPiece(name),
     seed: randomInt(4096)
   };
 }
@@ -329,8 +334,8 @@ function collides(piece, x = piece.x, y = piece.y, rotation = piece.rotation) {
 function spawnPiece() {
   active = nextPiece || makePiece(takeFromBag());
   active.x = Math.floor((COLS - BLOCK * 4) / 2);
-  active.y = -BLOCK * 3;
   active.rotation = 0;
+  active.y = spawnYForPiece(active.name, active.rotation);
   active.seed = randomInt(4096);
   nextPiece = makePiece(takeFromBag());
   drawNext();
