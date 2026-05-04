@@ -19,6 +19,7 @@ const ROWS = 240;
 const SCALE = 3;
 const BLOCK = 16;
 const MOVE_STEP = 8;
+const HARD_DROP_COOLDOWN_MS = 220;
 const SAND_STEPS = 1;
 const SAND_MOVE_RATE = 5;
 const FRESH_FLOAT_BASE = 8;
@@ -133,6 +134,7 @@ let dropRemainder = 0;
 let lastTime = performance.now();
 let frame = 0;
 let touchState = null;
+let nextHardDropAt = 0;
 let audioCtx = null;
 let audioUnlocked = false;
 
@@ -381,6 +383,10 @@ function tryRotate() {
 
 function hardDrop() {
   if (!active || !running || gameOver) return;
+  const now = performance.now();
+  if (now < nextHardDropAt) return;
+  nextHardDropAt = now + HARD_DROP_COOLDOWN_MS;
+
   let distance = 0;
   while (!collides(active, active.x, active.y + 1)) {
     active.y += 1;
@@ -708,6 +714,7 @@ function resetGame(startRunning = true) {
   elapsed = 0;
   dropRemainder = 0;
   frame = 0;
+  nextHardDropAt = 0;
   flashMap.fill(0);
   running = startRunning;
   gameOver = false;
@@ -787,7 +794,7 @@ document.addEventListener("keydown", (event) => {
   else if (key === "ArrowRight" || key === "d" || key === "D") tryMove(MOVE_STEP, 0);
   else if (key === "ArrowDown" || key === "s" || key === "S") softDrop();
   else if (key === "ArrowUp" || key === "x" || key === "X") tryRotate();
-  else if (key === " ") hardDrop();
+  else if (key === " " && !event.repeat) hardDrop();
   else if (key === "p" || key === "P") togglePause();
 });
 
