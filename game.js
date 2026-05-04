@@ -629,20 +629,19 @@ function render() {
     }
   }
 
-  if (active && !gameOver) paintActive(data);
-
   grainCtx.putImageData(image, 0, 0);
   gameCtx.imageSmoothingEnabled = false;
   gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
   gameCtx.drawImage(grainCanvas, 0, 0, gameCanvas.width, gameCanvas.height);
   drawScanLines();
+  if (active && !gameOver) drawActivePiece();
   drawFlashes();
 
   if (gameOver) drawBanner("GAME OVER");
   else if (gameStarted && !running) drawBanner("PAUSED");
 }
 
-function paintActive(data) {
+function drawActivePiece() {
   for (const [cx, cy] of cellsFor(active)) {
     const ox = active.x + cx * BLOCK;
     const oy = active.y + cy * BLOCK;
@@ -652,8 +651,9 @@ function paintActive(data) {
         const gy = oy + yy;
         if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
         const edge = isBlockEdge(xx, yy);
-        const idx = (gy * COLS + gx) * 4;
-        paintPixel(data, idx, RGB[active.color][pieceGrainShade(active, cx, cy, xx, yy, edge)]);
+        const color = PALETTE[active.color][pieceGrainShade(active, cx, cy, xx, yy, edge)];
+        gameCtx.fillStyle = color;
+        gameCtx.fillRect(gx * SCALE, gy * SCALE, SCALE, SCALE);
       }
     }
   }
