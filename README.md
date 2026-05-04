@@ -10,15 +10,17 @@ Open `index.html` in a browser. No build step or dependencies are required.
 
 ## Controls
 
+The game starts after the first tap, click, or key press.
+
 - Left / Right or A / D: move
 - Down or S: soft drop
 - Up or X: rotate
 - Space: hard drop
 - P: pause
-- R: restart
 
 ## Mobile
 
+- Tap anywhere on the start screen to begin
 - Tap the playfield: rotate
 - Swipe left / right: move
 - Swipe down: soft drop

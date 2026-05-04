@@ -12,7 +12,7 @@ const levelEl = document.getElementById("level");
 const timeEl = document.getElementById("time");
 const dangerFill = document.getElementById("dangerFill");
 const pauseBtn = document.getElementById("pauseBtn");
-const restartBtn = document.getElementById("restartBtn");
+const startScreen = document.getElementById("startScreen");
 
 const COLS = 160;
 const ROWS = 240;
@@ -125,7 +125,8 @@ let score = 0;
 let lines = 0;
 let level = 1;
 let best = Number(localStorage.getItem(BEST_KEY) || 0);
-let running = true;
+let gameStarted = false;
+let running = false;
 let gameOver = false;
 let elapsed = 0;
 let dropRemainder = 0;
@@ -151,8 +152,20 @@ function getAudioContext() {
 function unlockAudio() {
   const ctx = getAudioContext();
   if (!ctx) return;
+  const wasUnlocked = audioUnlocked;
   audioUnlocked = true;
-  if (ctx.state === "suspended") ctx.resume();
+  if (!wasUnlocked) primeAudio(ctx);
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+}
+
+function primeAudio(ctx) {
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  source.connect(gain);
+  gain.connect(ctx.destination);
+  source.start(ctx.currentTime);
 }
 
 function makeGain(ctx, volume, start, duration) {
@@ -225,6 +238,11 @@ function playRotateSound() {
 
 function playHardDropSound() {
   playTone(260, 0.08, 0.055, "sawtooth", 0, 120);
+}
+
+function playStartSound() {
+  playTone(330, 0.08, 0.045, "square", 0, 440);
+  playTone(660, 0.09, 0.04, "square", 0.08, 740);
 }
 
 function refillBag() {
@@ -587,7 +605,7 @@ function render() {
   drawFlashes();
 
   if (gameOver) drawBanner("GAME OVER");
-  else if (!running) drawBanner("PAUSED");
+  else if (gameStarted && !running) drawBanner("PAUSED");
 }
 
 function paintActive(data) {
@@ -677,7 +695,7 @@ function drawNext() {
   }
 }
 
-function resetGame() {
+function resetGame(startRunning = true) {
   board.fill(0);
   shade.fill(0);
   floatDelay.fill(0);
@@ -691,11 +709,21 @@ function resetGame() {
   dropRemainder = 0;
   frame = 0;
   flashMap.fill(0);
-  running = true;
+  running = startRunning;
   gameOver = false;
   nextPiece = makePiece(takeFromBag());
   spawnPiece();
   updateUi();
+}
+
+function startGame() {
+  if (gameStarted) return;
+  unlockAudio();
+  gameStarted = true;
+  startScreen.classList.add("hidden");
+  resetGame(true);
+  lastTime = performance.now();
+  playStartSound();
 }
 
 function setPaused(value) {
@@ -709,6 +737,7 @@ function togglePause() {
     resetGame();
     return;
   }
+  if (!gameStarted) return;
   setPaused(running);
 }
 
@@ -743,7 +772,13 @@ function loop(now) {
 
 document.addEventListener("keydown", (event) => {
   const key = event.key;
-  if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "p", "P", "r", "R", "x", "X"].includes(key)) {
+  if (!gameStarted) {
+    event.preventDefault();
+    startGame();
+    return;
+  }
+
+  if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "p", "P", "x", "X"].includes(key)) {
     event.preventDefault();
     unlockAudio();
   }
@@ -754,7 +789,6 @@ document.addEventListener("keydown", (event) => {
   else if (key === "ArrowUp" || key === "x" || key === "X") tryRotate();
   else if (key === " ") hardDrop();
   else if (key === "p" || key === "P") togglePause();
-  else if (key === "r" || key === "R") resetGame();
 });
 
 function bindHold(id, action, repeatMs = 86) {
@@ -796,10 +830,13 @@ pauseBtn.addEventListener("click", () => {
   unlockAudio();
   togglePause();
 });
-restartBtn.addEventListener("click", () => {
-  unlockAudio();
-  resetGame();
+
+startScreen.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  startGame();
 });
+
+startScreen.addEventListener("contextmenu", (event) => event.preventDefault());
 
 gameCanvas.addEventListener("pointerdown", (event) => {
   if (event.pointerType === "mouse") return;
@@ -862,5 +899,5 @@ gameCanvas.addEventListener("pointercancel", () => {
 
 gameCanvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
-resetGame();
+resetGame(false);
 requestAnimationFrame(loop);
