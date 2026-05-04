@@ -14,14 +14,15 @@ const dangerFill = document.getElementById("dangerFill");
 const pauseBtn = document.getElementById("pauseBtn");
 const startScreen = document.getElementById("startScreen");
 const machine = document.querySelector(".machine");
-const touchControls = document.querySelector(".touch-controls");
 
 const COLS = 160;
-const ROWS = 240;
+const USE_TALL_TOUCH_FIELD = window.matchMedia("(max-width: 860px), (pointer: coarse)").matches;
+const ROWS = USE_TALL_TOUCH_FIELD ? 288 : 240;
 const SCALE = 3;
 const BLOCK = 16;
 const MOVE_STEP = 8;
 const HARD_DROP_COOLDOWN_MS = 220;
+const TAP_MAX_MS = 540;
 const SAND_STEPS = 1;
 const SAND_MOVE_RATE = 5;
 const FRESH_FLOAT_BASE = 8;
@@ -30,6 +31,7 @@ const BEST_KEY = "sandtrix-best-v4";
 
 gameCanvas.width = COLS * SCALE;
 gameCanvas.height = ROWS * SCALE;
+gameCanvas.style.setProperty("--playfield-aspect", `${COLS} / ${ROWS}`);
 
 const grainCanvas = document.createElement("canvas");
 grainCanvas.width = COLS;
@@ -142,7 +144,7 @@ let audioUnlocked = false;
 
 bestEl.textContent = String(best);
 
-const protectedGestureRoots = [machine, startScreen, touchControls].filter(Boolean);
+const protectedGestureRoots = [document.body, machine, startScreen].filter(Boolean);
 
 function isProtectedGestureTarget(target) {
   return target instanceof Node && protectedGestureRoots.some((root) => root.contains(target));
@@ -387,9 +389,9 @@ function tryMove(dx, dy) {
   return false;
 }
 
-function tryRotate() {
+function tryRotate(direction = 1) {
   if (!active || !running || gameOver) return;
-  const nextRotation = (active.rotation + 1) % 4;
+  const nextRotation = (active.rotation + direction + 4) % 4;
   const kicks = [0, -MOVE_STEP, MOVE_STEP, -BLOCK, BLOCK, -BLOCK * 2, BLOCK * 2];
   for (const kick of kicks) {
     if (!collides(active, active.x + kick, active.y, nextRotation)) {
@@ -811,54 +813,20 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "p", "P", "x", "X"].includes(key)) {
+  if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", "p", "P", "z", "Z", "x", "X"].includes(key)) {
     event.preventDefault();
     unlockAudio();
   }
 
-  if (key === "ArrowLeft" || key === "a" || key === "A") tryMove(-MOVE_STEP, 0);
-  else if (key === "ArrowRight" || key === "d" || key === "D") tryMove(MOVE_STEP, 0);
-  else if (key === "ArrowDown" || key === "s" || key === "S") softDrop();
-  else if (key === "ArrowUp" || key === "x" || key === "X") tryRotate();
-  else if (key === " " && !event.repeat) hardDrop();
+  if (key === "ArrowLeft") tryMove(-MOVE_STEP, 0);
+  else if (key === "ArrowRight") tryMove(MOVE_STEP, 0);
+  else if (key === "ArrowDown") softDrop();
+  else if (key === "z" || key === "Z") tryRotate(-1);
+  else if (key === "x" || key === "X") tryRotate(1);
+  else if (key === "ArrowUp" && !event.repeat) hardDrop();
   else if (key === "p" || key === "P") togglePause();
 });
 
-function bindHold(id, action, repeatMs = 86) {
-  const button = document.getElementById(id);
-  let timer = 0;
-
-  const stop = () => {
-    if (timer) window.clearInterval(timer);
-    timer = 0;
-  };
-
-  button.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    unlockAudio();
-    button.setPointerCapture(event.pointerId);
-    action();
-    stop();
-    timer = window.setInterval(action, repeatMs);
-  });
-
-  button.addEventListener("pointerup", stop);
-  button.addEventListener("pointercancel", stop);
-  button.addEventListener("pointerleave", stop);
-  button.addEventListener("contextmenu", (event) => event.preventDefault());
-}
-
-bindHold("leftBtn", () => tryMove(-MOVE_STEP, 0));
-bindHold("rightBtn", () => tryMove(MOVE_STEP, 0));
-bindHold("downBtn", softDrop, 58);
-document.getElementById("rotateBtn").addEventListener("click", () => {
-  unlockAudio();
-  tryRotate();
-});
-document.getElementById("dropBtn").addEventListener("click", () => {
-  unlockAudio();
-  hardDrop();
-});
 pauseBtn.addEventListener("click", () => {
   unlockAudio();
   togglePause();
@@ -871,11 +839,37 @@ startScreen.addEventListener("pointerdown", (event) => {
 
 startScreen.addEventListener("contextmenu", (event) => event.preventDefault());
 
-gameCanvas.addEventListener("pointerdown", (event) => {
-  if (event.pointerType === "mouse") return;
+function isPauseTarget(target) {
+  return target instanceof Node && pauseBtn.contains(target);
+}
+
+function gestureStep() {
+  return Math.max(18, gameCanvas.getBoundingClientRect().width * 0.06);
+}
+
+function captureTouchPointer(pointerId) {
+  if (!document.body.setPointerCapture) return;
+  try {
+    document.body.setPointerCapture(pointerId);
+  } catch {
+    // The document still receives pointer events on most mobile browsers.
+  }
+}
+
+function releaseTouchPointer(pointerId) {
+  if (!document.body.releasePointerCapture) return;
+  try {
+    document.body.releasePointerCapture(pointerId);
+  } catch {
+    // Ignore release attempts after the browser has already cancelled capture.
+  }
+}
+
+function beginTouchGesture(event) {
+  if (event.pointerType === "mouse" || !gameStarted || gameOver || isPauseTarget(event.target)) return;
   event.preventDefault();
   unlockAudio();
-  gameCanvas.setPointerCapture(event.pointerId);
+  captureTouchPointer(event.pointerId);
   touchState = {
     id: event.pointerId,
     startX: event.clientX,
@@ -885,15 +879,15 @@ gameCanvas.addEventListener("pointerdown", (event) => {
     startedAt: performance.now(),
     moved: false
   };
-});
+}
 
-gameCanvas.addEventListener("pointermove", (event) => {
+function moveTouchGesture(event) {
   if (!touchState || touchState.id !== event.pointerId) return;
   event.preventDefault();
 
   const dx = event.clientX - touchState.lastX;
   const dy = event.clientY - touchState.lastY;
-  const step = Math.max(18, gameCanvas.getBoundingClientRect().width * 0.06);
+  const step = gestureStep();
 
   if (Math.abs(dx) >= step && Math.abs(dx) > Math.abs(dy) * 0.7) {
     tryMove(dx > 0 ? MOVE_STEP : -MOVE_STEP, 0);
@@ -906,31 +900,36 @@ gameCanvas.addEventListener("pointermove", (event) => {
     touchState.lastY = event.clientY;
     touchState.moved = true;
   }
-});
+}
 
-gameCanvas.addEventListener("pointerup", (event) => {
+function endTouchGesture(event) {
   if (!touchState || touchState.id !== event.pointerId) return;
   event.preventDefault();
 
   const totalX = event.clientX - touchState.startX;
   const totalY = event.clientY - touchState.startY;
   const duration = performance.now() - touchState.startedAt;
-  const tapLimit = Math.max(18, gameCanvas.getBoundingClientRect().width * 0.06);
+  const tapLimit = gestureStep();
 
   if (totalY < -tapLimit * 2 && Math.abs(totalX) < tapLimit * 2.2) {
     hardDrop();
-  } else if (!touchState.moved && Math.abs(totalX) < tapLimit && Math.abs(totalY) < tapLimit && duration < 320) {
-    tryRotate();
+  } else if (!touchState.moved && Math.abs(totalX) < tapLimit && Math.abs(totalY) < tapLimit && duration < TAP_MAX_MS) {
+    tryRotate(1);
   }
 
+  releaseTouchPointer(event.pointerId);
   touchState = null;
-});
+}
 
-gameCanvas.addEventListener("pointercancel", () => {
+function cancelTouchGesture(event) {
+  if (touchState && touchState.id === event.pointerId) releaseTouchPointer(event.pointerId);
   touchState = null;
-});
+}
 
-gameCanvas.addEventListener("contextmenu", (event) => event.preventDefault());
+document.addEventListener("pointerdown", beginTouchGesture, { passive: false });
+document.addEventListener("pointermove", moveTouchGesture, { passive: false });
+document.addEventListener("pointerup", endTouchGesture, { passive: false });
+document.addEventListener("pointercancel", cancelTouchGesture, { passive: false });
 
 resetGame(false);
 requestAnimationFrame(loop);
