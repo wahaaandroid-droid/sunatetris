@@ -333,9 +333,15 @@ function spawnPiece() {
   }
 }
 
-function grainShade(piece, gx, gy, edge) {
+function isBlockEdge(xx, yy) {
+  return xx === 0 || yy === 0 || xx === BLOCK - 1 || yy === BLOCK - 1;
+}
+
+function pieceGrainShade(piece, cx, cy, xx, yy, edge) {
   if (edge) return 2;
-  const noise = (gx * 37 + gy * 53 + piece.seed * 11) & 15;
+  const localX = cx * BLOCK + xx;
+  const localY = cy * BLOCK + yy;
+  const noise = (localX * 37 + localY * 53 + piece.seed * 11) & 15;
   if (noise < 2) return 3;
   if (noise < 6) return 1;
   return 0;
@@ -358,7 +364,7 @@ function lockPiece() {
         if (gx < 0 || gx >= COLS || gy >= ROWS) continue;
         const idx = gy * COLS + gx;
         board[idx] = active.color;
-        shade[idx] = grainShade(active, gx, gy, xx === 0 || yy === 0);
+        shade[idx] = pieceGrainShade(active, cx, cy, xx, yy, isBlockEdge(xx, yy));
         floatDelay[idx] = freshFloatDelay(active, cx, cy, xx, yy, gx, gy);
         placedInside = true;
       }
@@ -645,9 +651,9 @@ function paintActive(data) {
         const gx = ox + xx;
         const gy = oy + yy;
         if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
-        const edge = xx === 0 || yy === 0 || xx === BLOCK - 1 || yy === BLOCK - 1;
+        const edge = isBlockEdge(xx, yy);
         const idx = (gy * COLS + gx) * 4;
-        paintPixel(data, idx, RGB[active.color][grainShade(active, gx, gy, edge)]);
+        paintPixel(data, idx, RGB[active.color][pieceGrainShade(active, cx, cy, xx, yy, edge)]);
       }
     }
   }
