@@ -21,6 +21,7 @@ const ROWS = USE_TALL_TOUCH_FIELD ? 288 : 240;
 const SCALE = 3;
 const BLOCK = 16;
 const SPAWN_VISIBLE_RATIO = 0.5;
+const LOCK_SPAWN_DELAY = 0.5;
 const MOVE_STEP = 8;
 const HARD_DROP_COOLDOWN_MS = 220;
 const TAP_MAX_MS = 540;
@@ -139,6 +140,7 @@ let running = false;
 let gameOver = false;
 let elapsed = 0;
 let dropRemainder = 0;
+let spawnDelayRemaining = 0;
 let lastTime = performance.now();
 let frame = 0;
 let touchState = null;
@@ -336,6 +338,7 @@ function collides(piece, x = piece.x, y = piece.y, rotation = piece.rotation) {
 }
 
 function spawnPiece() {
+  spawnDelayRemaining = 0;
   active = nextPiece || makePiece(takeFromBag());
   active.x = Math.floor((COLS - BLOCK * 4) / 2);
   active.rotation = 0;
@@ -349,6 +352,12 @@ function spawnPiece() {
     running = false;
     updateUi();
   }
+}
+
+function scheduleNextSpawn() {
+  active = null;
+  dropRemainder = 0;
+  spawnDelayRemaining = LOCK_SPAWN_DELAY;
 }
 
 function isBlockEdge(xx, yy) {
@@ -388,14 +397,14 @@ function lockPiece() {
   }
 
   if (!placedInside) {
-    spawnPiece();
+    scheduleNextSpawn();
     return;
   }
 
   score += 12;
   playLockSound();
   scanClears();
-  spawnPiece();
+  scheduleNextSpawn();
 }
 
 function tryMove(dx, dy) {
@@ -840,6 +849,7 @@ function resetGame(startRunning = true) {
   level = 1;
   elapsed = 0;
   dropRemainder = 0;
+  spawnDelayRemaining = 0;
   frame = 0;
   nextHardDropAt = 0;
   flashMap.fill(0);
@@ -889,6 +899,21 @@ function update(dt) {
   frame += 1;
 
   updateSand();
+
+  let spawnedAfterDelay = false;
+  if (!active && spawnDelayRemaining > 0) {
+    spawnDelayRemaining -= dt;
+    if (spawnDelayRemaining <= 0) {
+      spawnPiece();
+      spawnedAfterDelay = true;
+    }
+  }
+
+  if (!active || spawnedAfterDelay) {
+    if (frame % 18 === 0) scanClears();
+    if (frame % 8 === 0) updateUi();
+    return;
+  }
 
   const fallSpeed = 22 + (level - 1) * 5;
   dropRemainder += dt * fallSpeed;
