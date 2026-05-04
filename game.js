@@ -358,7 +358,6 @@ function pieceGrainShade(piece, cx, cy, xx, yy, edge) {
 
 function lockPiece() {
   let placedInside = false;
-  let placedAboveTop = false;
   for (const [cx, cy] of cellsFor(active)) {
     const ox = active.x + cx * BLOCK;
     const oy = active.y + cy * BLOCK;
@@ -367,7 +366,6 @@ function lockPiece() {
         const gx = ox + xx;
         const gy = oy + yy;
         if (gy < 0) {
-          placedAboveTop = true;
           continue;
         }
         if (gx < 0 || gx >= COLS || gy >= ROWS) continue;
@@ -380,10 +378,8 @@ function lockPiece() {
     }
   }
 
-  if (!placedInside || placedAboveTop) {
-    gameOver = true;
-    running = false;
-    updateUi();
+  if (!placedInside) {
+    spawnPiece();
     return;
   }
 
@@ -470,6 +466,10 @@ function hasGamepadInput(actions) {
   return Object.values(actions).some(Boolean);
 }
 
+function hasNewGamepadInput(actions) {
+  return Object.keys(actions).some((name) => actions[name] && !gamepadPrevious[name]);
+}
+
 function wasGamepadPressed(actions, name) {
   return actions[name] && !gamepadPrevious[name];
 }
@@ -500,6 +500,15 @@ function pollGamepad(now) {
   const actions = readGamepadActions(gamepad);
   if (!gameStarted) {
     if (hasGamepadInput(actions)) startGame();
+    gamepadPrevious = actions;
+    return;
+  }
+
+  if (gameOver) {
+    if (hasNewGamepadInput(actions)) {
+      unlockAudio();
+      restartGameAfterGameOver();
+    }
     gamepadPrevious = actions;
     return;
   }
@@ -842,6 +851,14 @@ function startGame() {
   playStartSound();
 }
 
+function restartGameAfterGameOver() {
+  if (!gameOver) return false;
+  resetGame(true);
+  lastTime = performance.now();
+  playStartSound();
+  return true;
+}
+
 function setPaused(value) {
   if (gameOver) return;
   running = !value;
@@ -850,7 +867,7 @@ function setPaused(value) {
 
 function togglePause() {
   if (gameOver) {
-    resetGame();
+    restartGameAfterGameOver();
     return;
   }
   if (!gameStarted) return;
@@ -901,6 +918,13 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (gameOver) {
+    event.preventDefault();
+    unlockAudio();
+    restartGameAfterGameOver();
+    return;
+  }
+
   if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", "p", "P", "z", "Z", "x", "X"].includes(key)) {
     event.preventDefault();
     unlockAudio();
@@ -917,6 +941,7 @@ document.addEventListener("keydown", (event) => {
 
 pauseBtn.addEventListener("click", () => {
   unlockAudio();
+  if (restartGameAfterGameOver()) return;
   togglePause();
 });
 
@@ -929,6 +954,13 @@ startScreen.addEventListener("contextmenu", (event) => event.preventDefault());
 
 function isPauseTarget(target) {
   return target instanceof Node && pauseBtn.contains(target);
+}
+
+function restartGameFromPointer(event) {
+  if (!gameOver || !gameStarted || isPauseTarget(event.target)) return;
+  event.preventDefault();
+  unlockAudio();
+  restartGameAfterGameOver();
 }
 
 function gestureStep() {
@@ -1015,6 +1047,7 @@ function cancelTouchGesture(event) {
 }
 
 document.addEventListener("pointerdown", beginTouchGesture, { passive: false });
+document.addEventListener("pointerdown", restartGameFromPointer, { passive: false });
 document.addEventListener("pointermove", moveTouchGesture, { passive: false });
 document.addEventListener("pointerup", endTouchGesture, { passive: false });
 document.addEventListener("pointercancel", cancelTouchGesture, { passive: false });

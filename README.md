@@ -11,6 +11,7 @@ Open `index.html` in a browser. No build step or dependencies are required.
 ## Controls
 
 The game starts after the first tap, click, key press, or controller input.
+After game over, press any key, click, tap, or controller input to restart.
 
 - Left arrow: move left
 - Right arrow: move right
