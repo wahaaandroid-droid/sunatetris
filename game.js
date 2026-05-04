@@ -301,6 +301,7 @@ function grainShade(piece, gx, gy, edge) {
 
 function lockPiece() {
   let placedInside = false;
+  let placedAboveTop = false;
   for (const [cx, cy] of cellsFor(active)) {
     const ox = active.x + cx * BLOCK;
     const oy = active.y + cy * BLOCK;
@@ -308,7 +309,11 @@ function lockPiece() {
       for (let xx = 0; xx < BLOCK; xx += 1) {
         const gx = ox + xx;
         const gy = oy + yy;
-        if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+        if (gy < 0) {
+          placedAboveTop = true;
+          continue;
+        }
+        if (gx < 0 || gx >= COLS || gy >= ROWS) continue;
         const idx = gy * COLS + gx;
         board[idx] = active.color;
         shade[idx] = grainShade(active, gx, gy, xx === 0 || yy === 0);
@@ -318,7 +323,7 @@ function lockPiece() {
     }
   }
 
-  if (!placedInside) {
+  if (!placedInside || placedAboveTop) {
     gameOver = true;
     running = false;
     updateUi();
