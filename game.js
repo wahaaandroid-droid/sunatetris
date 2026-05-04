@@ -13,6 +13,8 @@ const timeEl = document.getElementById("time");
 const dangerFill = document.getElementById("dangerFill");
 const pauseBtn = document.getElementById("pauseBtn");
 const startScreen = document.getElementById("startScreen");
+const machine = document.querySelector(".machine");
+const touchControls = document.querySelector(".touch-controls");
 
 const COLS = 160;
 const ROWS = 240;
@@ -139,6 +141,24 @@ let audioCtx = null;
 let audioUnlocked = false;
 
 bestEl.textContent = String(best);
+
+const protectedGestureRoots = [machine, startScreen, touchControls].filter(Boolean);
+
+function isProtectedGestureTarget(target) {
+  return target instanceof Node && protectedGestureRoots.some((root) => root.contains(target));
+}
+
+function preventBrowserGesture(event) {
+  if (isProtectedGestureTarget(event.target)) event.preventDefault();
+}
+
+function clearProtectedSelection() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
+  if (isProtectedGestureTarget(selection.anchorNode) || isProtectedGestureTarget(selection.focusNode)) {
+    selection.removeAllRanges();
+  }
+}
 
 function randomInt(max) {
   return Math.floor(Math.random() * max);
@@ -776,6 +796,12 @@ function loop(now) {
   render();
   requestAnimationFrame(loop);
 }
+
+for (const eventName of ["contextmenu", "selectstart", "dragstart"]) {
+  document.addEventListener(eventName, preventBrowserGesture, true);
+}
+
+document.addEventListener("selectionchange", clearProtectedSelection);
 
 document.addEventListener("keydown", (event) => {
   const key = event.key;

@@ -11,8 +11,14 @@
   --meter: #85d36d;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 html,
@@ -35,7 +41,6 @@ body {
   font-family: "Courier New", Courier, monospace;
   letter-spacing: 0;
   touch-action: manipulation;
-  user-select: none;
 }
 
 body::before,
@@ -68,7 +73,6 @@ button {
   image-rendering: pixelated;
   min-height: 44px;
   touch-action: none;
-  user-select: none;
 }
 
 button:active {
@@ -85,6 +89,7 @@ button:active {
   align-items: stretch;
   justify-content: center;
   gap: 14px;
+  touch-action: none;
 }
 
 .play-shell {
