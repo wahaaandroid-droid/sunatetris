@@ -25,6 +25,7 @@ html,
 body {
   min-height: 100%;
   overscroll-behavior: none;
+  touch-action: none;
 }
 
 body {
@@ -40,7 +41,6 @@ body {
   color: #090909;
   font-family: "Courier New", Courier, monospace;
   letter-spacing: 0;
-  touch-action: manipulation;
 }
 
 body::before,

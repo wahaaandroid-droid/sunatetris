@@ -153,9 +153,11 @@ let gamepadRepeatAt = {
 };
 let audioCtx = null;
 let audioUnlocked = false;
+let lastProtectedTouchEndAt = 0;
 
 bestEl.textContent = String(best);
 
+const DOUBLE_TAP_ZOOM_GUARD_MS = 360;
 const protectedGestureRoots = [document.body, machine, startScreen].filter(Boolean);
 
 function isProtectedGestureTarget(target) {
@@ -164,6 +166,18 @@ function isProtectedGestureTarget(target) {
 
 function preventBrowserGesture(event) {
   if (isProtectedGestureTarget(event.target)) event.preventDefault();
+}
+
+function preventMultiTouchZoom(event) {
+  if (isProtectedGestureTarget(event.target) && event.touches.length > 1) event.preventDefault();
+}
+
+function preventDoubleTapZoom(event) {
+  if (!isProtectedGestureTarget(event.target)) return;
+
+  const now = performance.now();
+  if (now - lastProtectedTouchEndAt < DOUBLE_TAP_ZOOM_GUARD_MS) event.preventDefault();
+  lastProtectedTouchEndAt = now;
 }
 
 function clearProtectedSelection() {
@@ -940,6 +954,13 @@ function loop(now) {
 
 for (const eventName of ["contextmenu", "selectstart", "dragstart"]) {
   document.addEventListener(eventName, preventBrowserGesture, true);
+}
+
+document.addEventListener("touchstart", preventMultiTouchZoom, { passive: false, capture: true });
+document.addEventListener("touchend", preventDoubleTapZoom, { passive: false, capture: true });
+
+for (const eventName of ["gesturestart", "gesturechange", "gestureend"]) {
+  document.addEventListener(eventName, preventBrowserGesture, { passive: false, capture: true });
 }
 
 document.addEventListener("selectionchange", clearProtectedSelection);
