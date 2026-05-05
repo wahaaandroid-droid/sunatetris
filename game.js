@@ -23,11 +23,13 @@ const BLOCK = 16;
 const SPAWN_VISIBLE_RATIO = 0.5;
 const LOCK_SPAWN_DELAY = 0.5;
 const MOVE_STEP = 8;
+const HORIZONTAL_MOVE_SPEED = 155;
+const SOFT_DROP_SPEED = 185;
+const TOUCH_HORIZONTAL_MULTIPLIER = 1.85;
+const TOUCH_VERTICAL_MULTIPLIER = 1.25;
 const HARD_DROP_COOLDOWN_MS = 220;
 const TAP_MAX_MS = 540;
 const GAMEPAD_AXIS_THRESHOLD = 0.55;
-const GAMEPAD_REPEAT_DELAY_MS = 170;
-const GAMEPAD_REPEAT_MS = 72;
 const SAND_STEPS = 1;
 const SAND_MOVE_RATE = 5;
 const FRESH_FLOAT_BASE = 8;
@@ -141,16 +143,16 @@ let gameOver = false;
 let elapsed = 0;
 let dropRemainder = 0;
 let spawnDelayRemaining = 0;
+let inputRemainderX = 0;
+let inputRemainderY = 0;
+let softDropScoreRemainder = 0;
 let lastTime = performance.now();
 let frame = 0;
 let touchState = null;
 let nextHardDropAt = 0;
 let gamepadPrevious = {};
-let gamepadRepeatAt = {
-  left: 0,
-  right: 0,
-  down: 0
-};
+let keyboardInput = { left: false, right: false, down: false };
+let gamepadInput = { x: 0, down: 0 };
 let audioCtx = null;
 let audioUnlocked = false;
 let lastProtectedTouchEndAt = 0;
@@ -432,6 +434,90 @@ function tryMove(dx, dy) {
   return false;
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function wholePixels(value) {
+  return value < 0 ? Math.ceil(value) : Math.floor(value);
+}
+
+function addSoftDropScore(pixels) {
+  softDropScoreRemainder += pixels;
+  const earned = Math.floor(softDropScoreRemainder / 3);
+  if (earned <= 0) return;
+  score += earned;
+  softDropScoreRemainder -= earned * 3;
+}
+
+function moveActiveByPixels(dx = 0, dy = 0, awardSoftDrop = false) {
+  const moved = { x: 0, y: 0 };
+  if (!active || !running || gameOver) return moved;
+
+  const stepX = Math.sign(dx);
+  for (let i = 0; i < Math.abs(Math.trunc(dx)) && active; i += 1) {
+    if (!tryMove(stepX, 0)) break;
+    moved.x += stepX;
+  }
+
+  const stepY = Math.sign(dy);
+  for (let i = 0; i < Math.abs(Math.trunc(dy)) && active; i += 1) {
+    if (!tryMove(0, stepY)) break;
+    moved.y += stepY;
+  }
+
+  if (awardSoftDrop && moved.y > 0) addSoftDropScore(moved.y);
+  return moved;
+}
+
+function resetMovementRemainders() {
+  inputRemainderX = 0;
+  inputRemainderY = 0;
+}
+
+function clearHeldMovement() {
+  keyboardInput = { left: false, right: false, down: false };
+  gamepadInput = { x: 0, down: 0 };
+  resetMovementRemainders();
+}
+
+function applySmoothInput(dt) {
+  if (!active || !running || gameOver) {
+    resetMovementRemainders();
+    return;
+  }
+
+  const keyboardX = Number(keyboardInput.right) - Number(keyboardInput.left);
+  const horizontalIntent = clamp(keyboardX + gamepadInput.x, -1, 1);
+  if (horizontalIntent === 0) {
+    inputRemainderX = 0;
+  } else {
+    inputRemainderX += horizontalIntent * HORIZONTAL_MOVE_SPEED * dt;
+    const requestedX = wholePixels(inputRemainderX);
+    if (requestedX !== 0) {
+      const moved = moveActiveByPixels(requestedX, 0);
+      inputRemainderX -= requestedX;
+      if (moved.x !== requestedX) inputRemainderX = 0;
+    }
+  }
+
+  if (!active) return;
+
+  const downIntent = clamp(Number(keyboardInput.down) + gamepadInput.down, 0, 1);
+  if (downIntent === 0) {
+    inputRemainderY = 0;
+    return;
+  }
+
+  inputRemainderY += downIntent * SOFT_DROP_SPEED * dt;
+  const requestedY = Math.floor(inputRemainderY);
+  if (requestedY === 0) return;
+
+  const moved = moveActiveByPixels(0, requestedY, true);
+  inputRemainderY -= requestedY;
+  if (moved.y !== requestedY) inputRemainderY = 0;
+}
+
 function tryRotate(direction = 1) {
   if (!active || !running || gameOver) return;
   const nextRotation = (active.rotation + direction + 4) % 4;
@@ -463,7 +549,7 @@ function hardDrop() {
 }
 
 function softDrop() {
-  if (tryMove(0, 3)) score += 1;
+  moveActiveByPixels(0, 3, true);
 }
 
 function gamepadButton(gamepad, index) {
@@ -474,6 +560,16 @@ function gamepadAxis(gamepad, index) {
   return gamepad.axes[index] || 0;
 }
 
+function normalizedGamepadAxis(value) {
+  const magnitude = Math.abs(value);
+  if (magnitude <= GAMEPAD_AXIS_THRESHOLD) return 0;
+  return Math.sign(value) * ((magnitude - GAMEPAD_AXIS_THRESHOLD) / (1 - GAMEPAD_AXIS_THRESHOLD));
+}
+
+function positiveGamepadAxis(value) {
+  return Math.max(0, normalizedGamepadAxis(value));
+}
+
 function getPrimaryGamepad() {
   if (!navigator.getGamepads) return null;
   return Array.from(navigator.getGamepads()).find((gamepad) => gamepad?.connected) || null;
@@ -482,11 +578,21 @@ function getPrimaryGamepad() {
 function readGamepadActions(gamepad) {
   const axisX = gamepadAxis(gamepad, 0);
   const axisY = gamepadAxis(gamepad, 1);
+  const left = gamepadButton(gamepad, 14);
+  const right = gamepadButton(gamepad, 15);
+  const down = gamepadButton(gamepad, 13);
+  let moveX = normalizedGamepadAxis(axisX);
+
+  if (left && !right) moveX = -1;
+  else if (right && !left) moveX = 1;
+  else if (left && right) moveX = 0;
 
   return {
-    left: gamepadButton(gamepad, 14) || axisX < -GAMEPAD_AXIS_THRESHOLD,
-    right: gamepadButton(gamepad, 15) || axisX > GAMEPAD_AXIS_THRESHOLD,
-    down: gamepadButton(gamepad, 13) || axisY > GAMEPAD_AXIS_THRESHOLD,
+    left: left || axisX < -GAMEPAD_AXIS_THRESHOLD,
+    right: right || axisX > GAMEPAD_AXIS_THRESHOLD,
+    down: down || axisY > GAMEPAD_AXIS_THRESHOLD,
+    moveX,
+    dropAmount: down ? 1 : positiveGamepadAxis(axisY),
     hardDrop: gamepadButton(gamepad, 12) || gamepadButton(gamepad, 3) || axisY < -GAMEPAD_AXIS_THRESHOLD,
     rotateLeft: gamepadButton(gamepad, 2) || gamepadButton(gamepad, 4),
     rotateRight: gamepadButton(gamepad, 0) || gamepadButton(gamepad, 1) || gamepadButton(gamepad, 5),
@@ -506,32 +612,20 @@ function wasGamepadPressed(actions, name) {
   return actions[name] && !gamepadPrevious[name];
 }
 
-function handleGamepadRepeat(actions, name, now, action) {
-  if (!actions[name]) {
-    gamepadRepeatAt[name] = 0;
-    return;
-  }
-
-  const firstPress = !gamepadPrevious[name];
-  if (!firstPress && now < gamepadRepeatAt[name]) return;
-
-  action();
-  gamepadRepeatAt[name] = now + (firstPress ? GAMEPAD_REPEAT_DELAY_MS : GAMEPAD_REPEAT_MS);
-}
-
 function pollGamepad(now) {
   const gamepad = getPrimaryGamepad();
   if (!gamepad) {
     gamepadPrevious = {};
-    gamepadRepeatAt.left = 0;
-    gamepadRepeatAt.right = 0;
-    gamepadRepeatAt.down = 0;
+    gamepadInput.x = 0;
+    gamepadInput.down = 0;
     return;
   }
 
   const actions = readGamepadActions(gamepad);
   if (!gameStarted) {
     if (hasGamepadInput(actions)) startGame();
+    gamepadInput.x = 0;
+    gamepadInput.down = 0;
     gamepadPrevious = actions;
     return;
   }
@@ -541,6 +635,8 @@ function pollGamepad(now) {
       unlockAudio();
       restartGameAfterGameOver();
     }
+    gamepadInput.x = 0;
+    gamepadInput.down = 0;
     gamepadPrevious = actions;
     return;
   }
@@ -548,11 +644,11 @@ function pollGamepad(now) {
   if (actions.left && actions.right) {
     actions.left = false;
     actions.right = false;
+    actions.moveX = 0;
   }
 
-  handleGamepadRepeat(actions, "left", now, () => tryMove(-MOVE_STEP, 0));
-  handleGamepadRepeat(actions, "right", now, () => tryMove(MOVE_STEP, 0));
-  handleGamepadRepeat(actions, "down", now, softDrop);
+  gamepadInput.x = actions.moveX;
+  gamepadInput.down = actions.dropAmount;
 
   if (wasGamepadPressed(actions, "rotateLeft")) tryRotate(-1);
   if (wasGamepadPressed(actions, "rotateRight")) tryRotate(1);
@@ -864,6 +960,8 @@ function resetGame(startRunning = true) {
   elapsed = 0;
   dropRemainder = 0;
   spawnDelayRemaining = 0;
+  softDropScoreRemainder = 0;
+  clearHeldMovement();
   frame = 0;
   nextHardDropAt = 0;
   flashMap.fill(0);
@@ -929,6 +1027,13 @@ function update(dt) {
     return;
   }
 
+  applySmoothInput(dt);
+  if (!active) {
+    if (frame % 18 === 0) scanClears();
+    if (frame % 8 === 0) updateUi();
+    return;
+  }
+
   const fallSpeed = 22 + (level - 1) * 5;
   dropRemainder += dt * fallSpeed;
   while (dropRemainder >= 1 && active && running) {
@@ -965,6 +1070,14 @@ for (const eventName of ["gesturestart", "gesturechange", "gestureend"]) {
 
 document.addEventListener("selectionchange", clearProtectedSelection);
 
+function setKeyboardMove(key, isPressed) {
+  if (key === "ArrowLeft") keyboardInput.left = isPressed;
+  else if (key === "ArrowRight") keyboardInput.right = isPressed;
+  else if (key === "ArrowDown") keyboardInput.down = isPressed;
+  else return false;
+  return true;
+}
+
 document.addEventListener("keydown", (event) => {
   const key = event.key;
   if (!gameStarted) {
@@ -985,13 +1098,22 @@ document.addEventListener("keydown", (event) => {
     unlockAudio();
   }
 
-  if (key === "ArrowLeft") tryMove(-MOVE_STEP, 0);
-  else if (key === "ArrowRight") tryMove(MOVE_STEP, 0);
-  else if (key === "ArrowDown") softDrop();
-  else if (key === "z" || key === "Z") tryRotate(-1);
+  if (setKeyboardMove(key, true)) return;
+  if (key === "z" || key === "Z") tryRotate(-1);
   else if (key === "x" || key === "X") tryRotate(1);
   else if (key === "ArrowUp" && !event.repeat) hardDrop();
   else if (key === "p" || key === "P") togglePause();
+});
+
+document.addEventListener("keyup", (event) => {
+  if (!setKeyboardMove(event.key, false)) return;
+  event.preventDefault();
+});
+
+window.addEventListener("blur", clearHeldMovement);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearHeldMovement();
 });
 
 pauseBtn.addEventListener("click", () => {
@@ -1020,6 +1142,14 @@ function restartGameFromPointer(event) {
 
 function gestureStep() {
   return Math.max(18, gameCanvas.getBoundingClientRect().width * 0.06);
+}
+
+function touchDeltaToGamePixels(dx, dy) {
+  const rect = gameCanvas.getBoundingClientRect();
+  return {
+    x: dx * (COLS / Math.max(1, rect.width)),
+    y: dy * (ROWS / Math.max(1, rect.height))
+  };
 }
 
 function captureTouchPointer(pointerId) {
@@ -1051,6 +1181,8 @@ function beginTouchGesture(event) {
     startY: event.clientY,
     lastX: event.clientX,
     lastY: event.clientY,
+    remainderX: 0,
+    remainderY: 0,
     startedAt: performance.now(),
     moved: false
   };
@@ -1062,19 +1194,30 @@ function moveTouchGesture(event) {
 
   const dx = event.clientX - touchState.lastX;
   const dy = event.clientY - touchState.lastY;
-  const step = gestureStep();
+  const gameDelta = touchDeltaToGamePixels(dx, dy);
 
-  if (Math.abs(dx) >= step && Math.abs(dx) > Math.abs(dy) * 0.7) {
-    tryMove(dx > 0 ? MOVE_STEP : -MOVE_STEP, 0);
-    touchState.lastX = event.clientX;
-    touchState.moved = true;
+  touchState.remainderX += gameDelta.x * TOUCH_HORIZONTAL_MULTIPLIER;
+  const requestedX = wholePixels(touchState.remainderX);
+  if (requestedX !== 0) {
+    const moved = moveActiveByPixels(requestedX, 0);
+    touchState.remainderX -= requestedX;
+    if (moved.x !== requestedX) touchState.remainderX = 0;
+    if (moved.x !== 0) touchState.moved = true;
   }
 
-  if (dy >= step) {
-    softDrop();
-    touchState.lastY = event.clientY;
-    touchState.moved = true;
+  if (gameDelta.y > 0) {
+    touchState.remainderY += gameDelta.y * TOUCH_VERTICAL_MULTIPLIER;
+    const requestedY = Math.floor(touchState.remainderY);
+    if (requestedY !== 0) {
+      const moved = moveActiveByPixels(0, requestedY, true);
+      touchState.remainderY -= requestedY;
+      if (moved.y !== requestedY) touchState.remainderY = 0;
+      if (moved.y !== 0) touchState.moved = true;
+    }
   }
+
+  touchState.lastX = event.clientX;
+  touchState.lastY = event.clientY;
 }
 
 function endTouchGesture(event) {
